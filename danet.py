@@ -61,7 +61,7 @@ def create_atom(kernel_size=25):
         )
     return layers 
 
-def load_net(device, n_components, param_detector, param_atom, net_path='tmp/tmp', reassign_atoms=False, verbose=False):
+def load_net(device, n_components, param_detector, param_atom, net_path='tmp/tmp', verbose=False):
     net = decomposer(n_components, param_detector, param_atom).to(device)
     try:
         net.load_state_dict(torch.load(net_path + '.pth', map_location=torch.device(device)))
@@ -70,49 +70,6 @@ def load_net(device, n_components, param_detector, param_atom, net_path='tmp/tmp
     except:
         if verbose:
             print('Failed to load the saved model. [{}]'.format(net_path))
-
-    if reassign_atoms:
-        load_components, atom_power = index_effective_atoms(net)
-        if len(load_components) < net.n_components:
-            # load_components = [2, 5, 6, 7]
-            net_init = decomposer(n_components, param_detector, param_atom).to(device)
-            orig_dict = net.state_dict()
-            init_dict = net_init.state_dict()
-
-            # div_atom_idx = atom_power.argmax()
-            div_atom_idx = np.random.permutation(load_components)[0]
-            if verbose:
-                print('Load weights of {}'.format(load_components))
-                print('Initialize weights based on {}'.format(div_atom_idx))
-            div_atom = orig_dict['layers.{}.1.0.weight'.format(div_atom_idx)].clone()
-            orig_dict['layers.{}.1.0.weight'.format(div_atom_idx)][:] = 0.
-            load_components.remove(div_atom_idx)
-            n_divs = net.n_components - len(load_components)
-            div_idxs = list(range(0, div_atom.shape[2], int(np.ceil(div_atom.shape[2] / n_divs)))) + [div_atom.shape[2]] * 2
-            divided_atoms = []
-            for dd in range(n_divs):
-                _atom = div_atom.clone()
-                _atom[:, :, div_idxs[dd + 1]:] = 0.
-                div_atom[:, :, :div_idxs[dd + 1]] = 0.
-                divided_atoms.append(_atom)
-
-            d_count = 0
-            for name, param in orig_dict.items():
-                name_list = name.split('.')
-                if int(name_list[1]) in load_components:
-                    init_dict[name].copy_(param)
-                    # print('loaded for {}'.format(name))
-                else:
-                    if name_list[2] == '0':
-                        # nlist = list(name)
-                        # nlist[7] = str(div_atom_idx)
-                        name_list[1] = str(div_atom_idx)
-                        name2 = '{}.{}.{}.{}.{}'.format(*name_list)
-                        init_dict[name].copy_(orig_dict[name2])
-                    elif name_list[2] == '1':
-                        init_dict[name].copy_(divided_atoms[d_count])
-                        d_count += 1
-            net.load_state_dict(init_dict)
     return net
 
 class DAnet(BaseEstimator):
