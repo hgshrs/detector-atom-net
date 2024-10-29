@@ -42,7 +42,6 @@ def load_net(device, n_components, param_detector, param_atom, net_path='tmp', v
 def train(device, net, loss, criterion, alpha_l1, optimizer, dataloader, n_epochs, reassign_atoms_every=None):
     if reassign_atoms_every == None:
         reassign_atoms_every = n_epochs
-    print(reassign_atoms_every)
     n_total_epochs = loss.shape[0]
     loss = torch.cat([loss, torch.zeros([n_epochs, 3])], axis=0)
     win_len = net.state_dict()['layers.0.1.0.weight'].shape[2]
@@ -127,32 +126,35 @@ def index_effective_atoms(net):
 if __name__=='__main__':
     device = 'cpu'
     # device = 'cuda:0'
-    print('Available CUDA device:', device)
+    print('Available CUDA device:', device) # must choose available cuda device or cpu
 
-    sfreq = 250
-    length = 3
+    sfreq = 250 # sampling frequency of input signals
+    length = 3 # signal length [sec] for Fixedintervalwindows
+    band = [.5, 100] # band for bandpass filter
+    baseline = (0, length) # the time period for baseline calculation
     slen = int(sfreq * length) # number of time points
-    band = [.5, 100]
-    baseline = (0, length)
 
-    net_path = 'tmp.pth'
-    n_components = 8
-    param_detector = {'kernel_size':125, 'n_mid_channels':8, 'n_mid_layers':4}
-    param_atom = {'kernel_size':125}
-    alpha_l1 = 1e-5
-    # ns_epochs = [1000, 1000] # without, with sparsity
+    net_path = 'tmp.pth' # path for saving decomposer network parameters
+    n_components = 8 # number of the decomposed signals
+    param_detector = {'kernel_size':125, 'n_mid_channels':8, 'n_mid_layers':4} # parameters for conv layers for detectors
+    param_atom = {'kernel_size':125} # parameters for conv layers for atoms. kernel_size corresponds the signal length of an atom.
+    alpha_l1 = 1e-5 # coefficient for the sparsity loss
+    # ns_epochs = [5000, 5000] # without, with sparsity
     ns_epochs = [0, 0] # without, with sparsity
     lr = 1e-5
     beta1 = .5
-    reassign_atoms_every = 10
+    reassign_atoms_every = 10 # every this number of epochs, run the atom reassignment
 
     # =======================================
     print('\nGet epoched signals by FixedIntervalWindows...')
     # =======================================
     dataset = moabb.datasets.BNCI2014_001()
-    processing = set_processing(length, sfreq, [band[0], None], baseline)
-    x, _, _ = processing.get_data(dataset=dataset, subjects=[1,])
+    processing = set_processing(length, sfreq, band, baseline) # set the parameters for get_data
+    x, y, metadata = processing.get_data(dataset=dataset, subjects=[1,]) # size of tensor x: n_samples x n_channels x n_timepoints
     x = torch.from_numpy(x[:10]).float() # Reduce samples for demo purpose
+
+    # DataLoader must include a signal set, x, which a torch tensor of n_samples x n_timepoints.
+    # Because the dataset has multi-channel, the signals is reshaped from n_samples x n_channels x n_timepoints to (n_samples x n_channels) x n_timepoints.
     dl = torch.utils.data.DataLoader(x.view(x.shape[0] * x.shape[1], -1), batch_size=100, shuffle=True, num_workers=0)
 
     # =======================================
@@ -174,10 +176,7 @@ if __name__=='__main__':
     # =======================================
     # Decompose
     # =======================================
-    sig = x[0, 0].numpy()
-    dcm = danet.DAnet(net=net, sfreq=sfreq, norm=True)
-    decsig = dcm.transform(sig[np.newaxis, np.newaxis, :])[0] # sample x channel x time point
-    detout = dcm.transform(sig[np.newaxis, np.newaxis, :], outtype='detector')[0]
+    decomposed_signals = net(x[0, 0].view(1, -1)) # out sample x n_components x time point
 
     # =======================================
     # Visualize the training result
