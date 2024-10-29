@@ -176,7 +176,7 @@ if __name__=='__main__':
     # =======================================
     sig = x[0, 0].numpy()
     dcm = danet.DAnet(net=net, sfreq=sfreq, norm=True)
-    decsig = dcm.transform(sig[np.newaxis, np.newaxis, :])[0]
+    decsig = dcm.transform(sig[np.newaxis, np.newaxis, :])[0] # sample x channel x time point
     detout = dcm.transform(sig[np.newaxis, np.newaxis, :], outtype='detector')[0]
 
     # =======================================
