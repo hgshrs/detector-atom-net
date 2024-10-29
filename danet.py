@@ -11,6 +11,10 @@ from mne.decoding import CSP
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.pipeline import make_pipeline
 from moabb.evaluations import WithinSessionEvaluation, CrossSubjectEvaluation
+plt.rcParams['font.family'] = 'Helvetica'
+plt.rcParams['text.usetex'] = True
+plt.rcParams['font.size'] = 20
+plt.rcParams['text.latex.preamble'] = "\\usepackage{sfmath}"
 
 class decomposer(nn.Module):
     def __init__(self, n_components, param_detector={}, param_atom={}):
@@ -163,7 +167,8 @@ def viz_decomposer(fig, decomposer, sig, epoch_t, plot_interval=[0, 1]):
         atom = decomposer.net.state_dict()['layers.{}.1.0.weight'.format(decomposer.output_components[cc])].numpy().squeeze()
         atoms.append(atom)
     atoms = np.array(atoms).astype(np.float64)
-    atom_t = np.arange(atoms[cc].shape[0]) / sfreq
+    # atom_t = np.arange(atoms[cc].shape[0]) / sfreq
+    atom_t = epoch_t[:atoms[cc].shape[0]]
 
     for cc in range(n_components):
         c = lines[cc].get_color()
@@ -186,7 +191,7 @@ def viz_decomposer(fig, decomposer, sig, epoch_t, plot_interval=[0, 1]):
         ax_det.plot(epoch_t[interval_tp], detout[cc, interval_tp], c=c)
         ax_det.set_yticks([0])
         ax_det.set_yticklabels([0], fontsize=tick_fontsize)
-        ax_det.set_ylim(-0.002, detout.max() + 1 / sfreq)
+        # ax_det.set_ylim(-0.002, detout.max() + 1 / sfreq)
         ax_det.set_xticks([0, 1])
         ax_det.set_xticklabels([0, 1], fontsize=tick_fontsize)
 
@@ -245,7 +250,7 @@ if __name__=='__main__':
     fig.suptitle('EEG signal from {}'.format(dataset.code))
 
     # =======================================
-    print('\nClassification with a estimator with pre-trained decomposer')
+    print('\nClassification with an estimator with pre-trained decomposer')
     # =======================================
     dcm = DAnet(net=net, sfreq=sfreq, norm=True, outtype='decomposed', update_oc_by_fit=True)
     components = [
