@@ -6,14 +6,14 @@ This repo opens a demo code of the following article.
 
 | Package | Version |
 | ---- | ---- |
-| python | 3.8.18 |
-| numpy | 1.24.3 |
-| pytorch | 1.8.0 |
-| scikit-learn | 1.3.2 |
-| matplotlib | 1.24.3 |
+| python | 3.11.7 |
+| numpy | 1.26.3 |
+| pytorch | 2.1.2 |
+| scikit-learn | 1.4.0 |
+| matplotlib | 3.8.2 |
 | moabb | 1.0.0 |
-| mne | 1.6.0 |
-| tqdm | 4.65.0 |
+| mne | 1.6.1 |
+| tqdm | 4.66.1 |
 
 # Use our pre-trained model
 See and execute

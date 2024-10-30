@@ -139,8 +139,8 @@ if __name__=='__main__':
     param_detector = {'kernel_size':125, 'n_mid_channels':8, 'n_mid_layers':4} # parameters for conv layers for detectors
     param_atom = {'kernel_size':125} # parameters for conv layers for atoms. kernel_size corresponds the signal length of an atom.
     alpha_l1 = 1e-5 # coefficient for the sparsity loss
-    # ns_epochs = [5000, 5000] # without, with sparsity
-    ns_epochs = [0, 0] # without, with sparsity
+    ns_epochs = [5000, 5000] # without, with sparsity
+    # ns_epochs = [0, 0] # without, with sparsity
     lr = 1e-5
     beta1 = .5
     reassign_atoms_every = 10 # every this number of epochs, run the atom reassignment
