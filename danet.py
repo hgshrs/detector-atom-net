@@ -19,7 +19,6 @@ plt.rcParams['text.latex.preamble'] = "\\usepackage{sfmath}"
 class decomposer(nn.Module):
     def __init__(self, n_components, param_detector={}, param_atom={}):
         super(decomposer, self).__init__()
-        # self.conv_layers = make_filter_layers()
         self.n_components = n_components
         self.param_detector = param_detector
         self.param_atom = param_atom
@@ -36,7 +35,7 @@ class decomposer(nn.Module):
         for ll, layer in enumerate(self.layers):
             _x = x[:, np.newaxis, ]
             _x = layer[0](_x) # detector
-            _x = layer[1](_x) # kernel
+            _x = layer[1](_x) # atom
             # out[:, ll, :] = _x.view(-1, _x.size(1) * _x.size(2))
             out[:, ll, :] = _x.squeeze()
         return out
@@ -58,23 +57,84 @@ def create_detector(kernel_size=25, n_mid_channels=4, n_mid_layers=2):
     layers = nn.Sequential(*layer_list)
     return layers
 
-def create_atom(kernel_size=25):
+def create_atom(kernel_size=25, padding='same'):
     layers = nn.Sequential(
-        # nn.Conv1d(1, 1, kernel_size, bias=True, padding='same'),
-        nn.Conv1d(1, 1, kernel_size, bias=False, padding='same'),
+        nn.Conv1d(1, 1, kernel_size, bias=False, padding=padding),
         )
     return layers 
 
-def load_net(device, n_components, param_detector, param_atom, net_path='tmp/tmp', verbose=False):
-    net = decomposer(n_components, param_detector, param_atom).to(device)
+class decomposer_shared_atom(nn.Module):
+    def __init__(self, n_components, param_detector={}, param_atom={}):
+        super(decomposer_shared_atom, self).__init__()
+        self.n_components = n_components
+        self.param_detector = param_detector
+        self.param_atom = param_atom
+        layers = []
+        for cc in range(n_components):
+            layers.append(create_detector(**param_detector))
+        layers.append(create_atom(**param_atom))
+        self.layers = nn.ModuleList(layers)
+
+    def forward(self, x):
+        out = torch.zeros([x.shape[0], self.n_components, x.shape[1]])
+        for ll, layer in enumerate(self.layers[:-1]):
+            _x = x[:, np.newaxis, ]
+            _x = layer(_x) # detector
+            _x = self.layers[-1](_x) # atom
+            out[:, ll, :] = _x.squeeze()
+        return out
+
+class decomposer_time_locked(nn.Module):
+    def __init__(self, n_components, param_detector={}, param_atom={}):
+        super(decomposer_time_locked, self).__init__()
+        self.n_components = n_components
+        self.param_detector = param_detector
+        self.param_atom = param_atom
+        self.slen = param_atom['kernel_size']
+        layers = []
+        for cc in range(n_components):
+            layers.append(nn.ModuleList([
+                create_detector(**param_detector),
+                nn.Sequential(
+                    nn.Linear(self.slen, 1), # data_len --> 1
+                    nn.ReLU(),
+                    ),
+                create_atom(padding=self.slen-1, **param_atom),
+                ]))
+        self.layers = nn.ModuleList(layers)
+
+    def forward(self, x):
+        out = torch.zeros([x.shape[0], self.n_components, x.shape[1]])
+        for ll, layer in enumerate(self.layers):
+            _x = x[:, np.newaxis, ]
+            _x = layer[0](_x) # detector
+            _x = _x.view(-1, _x.size(1) * _x.size(2))
+            _x = layer[1](_x) # detector (linear layer)
+            _x = _x.view(-1, 1, 1)
+            _x = layer[2](_x) # atom
+            out[:, ll, :] = _x.squeeze()
+        return out
+
+def load_net(net, n_components, param_detector, param_atom, net_path='tmp', with_loss=False, device='cpu', verbose=False):
+    loss = torch.zeros([0, 3])
     try:
-        net.load_state_dict(torch.load(net_path + '.pth', map_location=torch.device(device)))
-        if verbose:
-            print('Succeeded to load the saved model. [{}]'.format(net_path))
+        mm = torch.load(net_path, map_location=torch.device(device))
+        if with_loss:
+            net.load_state_dict(mm['net'])
+            loss = mm['loss']
+            if verbose:
+                print('Succeeded to load the saved model. [{}, Epoch: {}]'.format(net_path, loss.shape[0]))
+        else:
+            net.load_state_dict(mm)
+            if verbose:
+                print('Succeeded to load the saved model. [{}]'.format(net_path))
     except:
         if verbose:
             print('Failed to load the saved model. [{}]'.format(net_path))
-    return net
+    if with_loss:
+        return net, loss
+    else:
+        return net
 
 class DAnet(BaseEstimator):
     def __init__(self, net, sfreq=250, norm=True, outtype='decomposed', output_components=np.array([]), update_oc_by_fit=False):
@@ -215,13 +275,14 @@ def viz_decomposer(fig, decomposer, sig, epoch_t, plot_interval=[0, 1]):
     return decsig, detout, atoms, mae, cs
 
 if __name__=='__main__':
-    net_path = 'danet_parameters'
+    net_path = 'danet_parameters.pth'
     param_detector = {'kernel_size':125, 'n_mid_channels':8, 'n_mid_layers':4}
     param_atom = {'kernel_size':125}
     n_components = 8
     sfreq = 250
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    net = load_net(device, n_components, param_detector, param_atom, net_path=net_path, verbose=True)
+    net = decomposer(n_components, param_detector, param_atom).to(device)
+    net = load_net(net, n_components, param_detector, param_atom, net_path=net_path, device=device, verbose=True)
     dcm = DAnet(net=net, sfreq=sfreq, norm=True, outtype='decomposed', update_oc_by_fit=False)
 
     # =======================================

@@ -26,3 +26,15 @@ See and execute
 ```
 python train.py
 ```
+
+# Train a decomposer for a shared atom with your-own-dataset
+See and execute
+```
+python train_shared_atoms.py
+```
+
+# Train a decomposer for time-locked components with your-own-dataset
+See and execute
+```
+python train_time_locked.py
+```

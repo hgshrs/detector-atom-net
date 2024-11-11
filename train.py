@@ -25,50 +25,58 @@ def set_processing(length, sfreq, band, baseline):
     )
     return processing
 
-def load_net(device, n_components, param_detector, param_atom, net_path='tmp', verbose=False):
-    net = danet.decomposer(n_components, param_detector, param_atom).to(device)
-    loss = torch.zeros([0, 3])
-    try:
-        mm = torch.load(net_path)
-        net.load_state_dict(mm['net'])
-        loss = mm['loss']
-        if verbose:
-            print('Succeeded to load the saved model. [{}]'.format(net_path))
-    except:
-        if verbose:
-            print('Failed to load the saved model. [{}]'.format(net_path))
-    return net, loss
+def train(device, net, loss, criterion, alpha_l1, optimizer, dataloader, n_epochs,
+        mode='unsupervised', reassign_atoms_every=None,
+        net_path='', save_every=None):
 
-def train(device, net, loss, criterion, alpha_l1, optimizer, dataloader, n_epochs, reassign_atoms_every=None):
     if reassign_atoms_every == None:
         reassign_atoms_every = n_epochs
+    if save_every == None:
+        save_every = n_epochs
+    if net_path == '':
+        save_every = n_epochs
+
     n_total_epochs = loss.shape[0]
     loss = torch.cat([loss, torch.zeros([n_epochs, 3])], axis=0)
-    win_len = net.state_dict()['layers.0.1.0.weight'].shape[2]
     for epoch in tqdm(range(n_epochs)):
         batch_loss = torch.zeros([len(dataloader), 3])
         for itr, batch_data in enumerate(dataloader):
-            eeg = batch_data.to(device)
+            if mode == 'unsupervised':
+                eeg = batch_data.to(device)
+            elif mode == 'supervised':
+                eeg, y = batch_data
             net.zero_grad()
             decsig = net(eeg).to(device)
-            residue_loss = criterion(eeg[:, win_len:-win_len], decsig[:, :, win_len:-win_len].sum(1)).mean()
+            if mode == 'unsupervised':
+                main_loss = criterion(eeg, decsig.sum(1)).mean()
+            elif mode == 'supervised':
+                main_loss = criterion(eeg, decsig, y)
+
             det_l1_loss = torch.tensor(0., requires_grad=True)
             for cc in range(net.n_components):
                 if alpha_l1 > 0:
                     det = net.layers[cc][0](eeg[:, np.newaxis],).squeeze()
                     nl = torch.norm(det, 1, dim=1)
                     det_l1_loss = det_l1_loss + nl[torch.logical_not(torch.isnan(nl))].mean()
-            total_loss = residue_loss + alpha_l1 * det_l1_loss
+
+            total_loss = main_loss + alpha_l1 * det_l1_loss
             total_loss.backward()
             optimizer.step()
             batch_loss[itr, 0] = total_loss.item()
-            batch_loss[itr, 1] = residue_loss.item()
+            batch_loss[itr, 1] = main_loss.item()
             batch_loss[itr, 2] = det_l1_loss.item()
         loss[n_total_epochs + epoch] = batch_loss.sum(0)
 
         # Atom reassignment
-        if epoch % reassign_atoms_every == 0:
+        if (epoch % reassign_atoms_every == 0) & (epoch > 0):
             net = atom_reassign(net, device, verbose=True)
+
+        # Save
+        if (epoch % save_every == 0) & (epoch > 0):
+            _loss = loss[:(n_total_epochs + epoch)]
+            torch.save({'net':net.state_dict(), 'loss':_loss}, net_path)
+    if net_path != '':
+        torch.save({'net':net.state_dict(), 'loss':loss}, net_path)
     return net, loss
 
 def atom_reassign(net, device, verbose=False):
@@ -123,6 +131,26 @@ def index_effective_atoms(net):
             load_components.append(cc)
     return load_components, atom_power
 
+class supervised_loss(nn.Module):
+    def __init__(self):
+        super(supervised_loss, self).__init__()
+        # self.class_labels = class_labels
+        # self.n_components = len(class_labels)
+
+    def forward(self, eeg, decsig, y):
+        n_classes = y.shape[1]
+        outeeg = torch.zeros_like(eeg)
+        z2 = torch.zeros_like(eeg)
+        loss2 = 0.
+        for ss, class_labels in enumerate(y):
+            class_idx = y[ss].argmax().item()
+            outeeg[ss] = decsig[ss, class_idx]
+            for diff_idx in np.setdiff1d(range(n_classes), [class_idx]):
+                loss2 += torch.dot(decsig[ss][diff_idx], decsig[ss][diff_idx])
+        z1 = eeg - outeeg
+        loss1 = torch.dot(z1.reshape([-1]), z1.reshape([-1]))
+        return loss1 + loss2
+
 if __name__=='__main__':
     device = 'cpu'
     # device = 'cuda:0'
@@ -160,7 +188,8 @@ if __name__=='__main__':
     # =======================================
     print('\nTrain decomposer...')
     # =======================================
-    net, loss = load_net(device, n_components, param_detector, param_atom, net_path=net_path, verbose=True)
+    net = danet.decomposer(n_components, param_detector, param_atom).to(device)
+    net, loss = danet.load_net(net, n_components, param_detector, param_atom, net_path=net_path, with_loss=True, verbose=True)
     optimizer = optim.Adam(net.parameters(), lr=lr, betas=(beta1, .999), weight_decay=1e-5)
     criterion = nn.MSELoss(reduction='none')
     for sse, n_epochs in enumerate(ns_epochs):
@@ -176,6 +205,7 @@ if __name__=='__main__':
     # =======================================
     # Decompose
     # =======================================
+    net.eval()
     decomposed_signals = net(x[0, 0].view(1, -1)) # out sample x n_components x time point
 
     # =======================================
