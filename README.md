@@ -38,3 +38,9 @@ See and execute
 ```
 python train_time_locked.py
 ```
+
+# Train a decomposer for noise reduction with your-own-dataset
+See and execute
+```
+python train_noise_remover.py
+```
