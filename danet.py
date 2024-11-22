@@ -227,7 +227,6 @@ def viz_decomposer(fig, decomposer, sig, epoch_t, plot_interval=[0, 1]):
         atom = decomposer.net.state_dict()['layers.{}.1.0.weight'.format(decomposer.output_components[cc])].numpy().squeeze()
         atoms.append(atom)
     atoms = np.array(atoms).astype(np.float64)
-    # atom_t = np.arange(atoms[cc].shape[0]) / sfreq
     atom_t = epoch_t[:atoms[cc].shape[0]]
 
     for cc in range(n_components):

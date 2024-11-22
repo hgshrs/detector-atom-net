@@ -45,12 +45,20 @@ def train(device, net, loss, criterion, alpha_l1, optimizer, dataloader, n_epoch
                 eeg = batch_data.to(device)
             elif mode == 'supervised':
                 eeg, y = batch_data
+            elif mode == 'labeled_mse':
+                eeg, trg_eeg, y = batch_data
+            elif mode == 'target':
+                eeg, trg_eeg, y = batch_data
             net.zero_grad()
             decsig = net(eeg).to(device)
             if mode == 'unsupervised':
                 main_loss = criterion(eeg, decsig.sum(1)).mean()
             elif mode == 'supervised':
                 main_loss = criterion(eeg, decsig, y)
+            elif mode == 'labeled_mse':
+                main_loss = criterion(trg_eeg, decsig, y)
+            elif mode == 'target':
+                main_loss = criterion(trg_eeg, decsig.sum(1)).mean()
 
             det_l1_loss = torch.tensor(0., requires_grad=True)
             for cc in range(net.n_components):
@@ -151,6 +159,19 @@ class supervised_loss(nn.Module):
         loss1 = torch.dot(z1.reshape([-1]), z1.reshape([-1]))
         return loss1 + loss2
 
+class labeled_MSELoss(nn.Module):
+    def __init__(self, label=True):
+        super(labeled_MSELoss, self).__init__()
+        self.label = label
+        self.ml = nn.MSELoss(reduction='mean')
+
+    def forward(self, eeg, decsig, y):
+        _eeg = eeg.view(-1)[y.view(-1) == self.label]
+        _recsig1 = decsig.sum(1).view(-1)[y.view(-1) == self.label]
+        # _recsig2 = decsig.sum(1).view(-1)[y.view(-1) != self.label]
+        # return self.ml(_eeg, _recsig1) + _recsig2.abs().mean()
+        return self.ml(_eeg, _recsig1)
+
 if __name__=='__main__':
     device = 'cpu'
     # device = 'cuda:0'
@@ -199,7 +220,7 @@ if __name__=='__main__':
         elif sse == 1:
             _alpha_l1 = alpha_l1
             print('With sparsity loss...')
-        net, loss = train(device, net, loss, criterion, _alpha_l1, optimizer, dl, n_epochs, reassign_atoms_every)
+        net, loss = train(device, net, loss, criterion, _alpha_l1, optimizer, dl, n_epochs, reassign_atoms_every=reassign_atoms_every)
         torch.save({'net':net.state_dict(), 'loss':loss}, net_path)
 
     # =======================================
